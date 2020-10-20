@@ -15,7 +15,7 @@ def circles(image, gray):
     output[:] = (255, 255, 255)
     # Find circles
     dp = 1.5
-    minDist = 50
+    minDist = 20
     minRadius = 0
     maxRadius = 0
     circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, dp, minDist)

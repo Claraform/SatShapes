@@ -3,9 +3,10 @@ import argparse
 import cv2
 import os
 import imutils 
+import shapes
 
-def find_contours():
-  thresh = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY)[1]
+def find_contours(image):
+  thresh = cv2.threshold(image, 60, 255, cv2.THRESH_BINARY)[1]
   # find contours in the thresholded image and initialize the
   # shape detector
   cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
@@ -34,16 +35,24 @@ def median_blur(image, ksize):
   median = cv2.medianBlur(image, ksize)
   return median
 
-def preprocess(image, blurring):
+def preprocess(image, blurring, edge_detect):
+  # Increase contrast
+  alpha = 1.0
+  beta = 2
+  image = cv2.convertScaleAbs(image, alpha, beta)
+  cv2.imwrite("contrast.png", image)
   # Convert image to grayscale
   grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
   # Blur image
-  if blurring == gaussian:
+  if blurring == "gaussian":
     blurred = gaussian_blur(grayscale, 5, 0)
   else:
-    blurred = median_blur(grayscale, ksize)
+    blurred = median_blur(grayscale, 5)
+  #Sharpen
+  sharp = cv2.Laplacian(blurred, cv2.CV_8U, 1)
   # Apply edge detection
-  edges = canny_edge(blurred)
+  edges = canny_edge(sharp)
+  cv2.imwrite("processed.png", edges)
   return edges
 
 
@@ -54,7 +63,13 @@ if __name__ == "__main__":
     args = vars(ap.parse_args())
     # Load image
     raster = cv2.imread(args["image"])
-    processed = preprocess(raster)
-    convert(processed)
+    # Set pre-processing functions
+    blurring = "median"
+    edge_detect = "canny"
+    # Pre-process
+    processed = preprocess(raster, blurring, edge_detect)
+    # Find circles
+    shapes.circles(raster, processed)
+    #convert(processed)
   except Exception as e:
     print(e)
