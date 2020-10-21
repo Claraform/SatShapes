@@ -4,7 +4,38 @@ import imutils
 import argparse
 
 
-def squares():
+def create_template(length, width):
+    template = np.zeros((length, width, 3), np.uint8)
+    cv2.rectangle(template, (width-1, 0), (0, length-1), (255, 255, 255), 1)
+    template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite("template.png", template)
+    return template
+
+
+def template_match(image, gray, length, width):
+    template = create_template(length, width)
+    result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+    threshold = 0.5
+    # Find all locations where match values are greater than threshold
+    locations = np.where((result >= threshold))
+    # Outline locations
+    for point in zip(*locations[::-1]):
+        cv2.rectangle(
+            image, point, (point[0] + width, point[1] + length), (0, 0, 255), 4)
+    # Rotate image and template match
+    if (length != width):
+        template = create_template(width, length)
+        result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+        # Find all locations where match values are greater than threshold
+        locations = np.where((result >= threshold))
+        # Outline locations
+        for point in zip(*locations[::-1]):
+            cv2.rectangle(
+                image, point, (point[0] + length, point[1] + width), (0, 0, 255), 4)
+    return image
+
+
+def squares(image, template):
     # Find squares
     x = 0
 
@@ -15,10 +46,11 @@ def circles(image, gray):
     output[:] = (255, 255, 255)
     # Find circles
     dp = 1.5
-    minDist = 600
+    minDist = 100
     minRadius = 0
     maxRadius = 0
-    circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, dp, minDist)
+    circles = cv2.HoughCircles(
+        gray, cv2.HOUGH_GRADIENT, dp, minDist, None, 200, 100, 0, 50)
     if circles is not None:
         # Convert radius and centre point to int
         circles = np.round(circles[0, :]).astype("int")
@@ -47,17 +79,18 @@ def triangles(image, gray):
         gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contours = imutils.grab_contours(contours)
     for cont in contours:
-      #Compute perimeter of contour
-      perimeter = cv2.arcLength(cont, True)
-      #Construct contour approximation
-      approx = cv2.approxPolyDP(cont, 0.04*perimeter, True)
-      #Determine whether contour is a triangle
-      if len(approx) == 3:
-        cv2.drawContours(image, [cont], -1, (0, 0, 255), 4)
-        cv2.drawContours(output, [cont], -1, (0, 0, 255), 4)
+        # Compute perimeter of contour
+        perimeter = cv2.arcLength(cont, True)
+        # Construct contour approximation
+        approx = cv2.approxPolyDP(cont, 0.04*perimeter, True)
+        # Determine whether contour is a triangle
+        if len(approx) == 3:
+            cv2.drawContours(image, [cont], -1, (0, 0, 255), 4)
+            cv2.drawContours(output, [cont], -1, (0, 0, 255), 4)
 
     cv2.imwrite("triangle.png", image)
     cv2.imwrite("skeleton_tri.png", output)
+
 
 def rectangles():
     # Find rectangles

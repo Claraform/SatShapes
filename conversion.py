@@ -6,6 +6,15 @@ import imutils
 import shapes
 
 
+def invert(image, edges):
+    inverse = (1.0 / 255) * (255 - edges)
+    channels = cv2.split(image)
+    for channel in channels:
+        channel[:] = channel * inverse
+    cv2.merge(channels, edges)
+    return edges
+
+
 def find_contours(image):
     thresh = cv2.threshold(image, 60, 255, cv2.THRESH_BINARY)[1]
     # find contours in the thresholded image and initialize the
@@ -35,7 +44,7 @@ def canny_edge(image):
     canny2 = cv2.Canny(image, lower, upper, None, 3, True)
     cv2.imwrite("laplace.png", canny2)
     # minval, maxval, aperture_size (size of sobel kernel) defaults as 3, L2gradient specifies euqation for finding gradient magnitude
-    return canny2
+    return canny
 
 
 def gaussian_blur(image, ksize, sigma):
@@ -57,8 +66,8 @@ def bilateral_blur(image):
 def unsharp_mask(image):
     kernel_size = (5, 5)
     sigma = 1.0
-    amount = 1.5  #amount of sharpening
-    threshold = 0 #threshold for low-contrast mask
+    amount = 1.5  # amount of sharpening
+    threshold = 0  # threshold for low-contrast mask
     blurred = cv2.GaussianBlur(image, kernel_size, sigma)
     sharpened = float(amount + 1) * image - float(amount) * blurred
     sharpened = np.maximum(sharpened, np.zeros(sharpened.shape))
@@ -79,7 +88,7 @@ def preprocess(image, blurring, edge_detect):
     elif blurring == "bilateral":
         blurred = bilateral_blur(grayscale)
     else:
-        blurred = median_blur(grayscale, 3)
+        blurred = median_blur(grayscale, 5)
     cv2.imwrite("blurred.png", blurred)
     # Increase contrast
     alpha = 1
@@ -92,11 +101,15 @@ def preprocess(image, blurring, edge_detect):
     #sharp = cv2.filter2D(blurred, -1, kernel)
     #sharp = unsharp_mask(blurred)
     #cv2.imwrite("sharp.png", sharp)
-    edges2 = cv2.Laplacian(blurred, cv2.CV_64F)
-    cv2.imwrite("laplace.png", edges2)
+    #edges2 = cv2.Laplacian(blurred, cv2.CV_64F)
+    #cv2.imwrite("laplace.png", edges2)
     # Apply edge detection
     edges = canny_edge(blurred)
     cv2.imwrite("canny.png", edges)
+    # Invert image
+    #inverted = invert(grayscale, edges)
+    #cv2.imwrite("inverted.png", inverted)
+    # return inverted
     return edges
 
 
@@ -109,12 +122,18 @@ if __name__ == "__main__":
         # Load image
         raster = cv2.imread(args["image"])
         # Set pre-processing functions
-        blurring = "median"
+        blurring = "bilateral"
         edge_detect = "canny"
         # Pre-process
         processed = preprocess(raster, blurring, edge_detect)
         # Find circles
-        shapes.circles(raster, processed)
+        #shapes.circles(raster, processed)
+        matched = raster.copy()
+        w, h = processed.shape[::-1]
+        for y in range(60, int(w/2), 5):
+            for x in range(60, h-20, 5):
+                matched = shapes.template_match(matched, processed, y, x)
         # convert(processed)
+        cv2.imwrite("matched.png", matched)
     except Exception as e:
         print(e)
