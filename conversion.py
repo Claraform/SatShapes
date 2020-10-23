@@ -15,15 +15,6 @@ def invert(image, edges):
     return edges
 
 
-def find_contours(image):
-    thresh = cv2.threshold(image, 60, 255, cv2.THRESH_BINARY)[1]
-    # find contours in the thresholded image and initialize the
-    # shape detector
-    cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
-                            cv2.CHAIN_APPROX_SIMPLE)
-    cnts = imutils.grab_contours(cnts)
-
-
 def convert(image, name):
     # First write out image
     name_ext = name + ".png"
@@ -129,9 +120,9 @@ if __name__ == "__main__":
         # Find circles
         #shapes.circles(raster, processed)
         matched = raster.copy()
-        w, h = processed.shape[::-1]
-        for y in range(60, int(w/2), 5):
-            for x in range(60, h-20, 5):
+        h, w = processed.shape
+        for y in range(60, h-60, 1):
+            for x in range(60, int(w/2), 1):
                 matched = shapes.template_match(matched, processed, y, x)
         # convert(processed)
         cv2.imwrite("matched.png", matched)

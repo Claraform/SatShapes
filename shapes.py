@@ -15,15 +15,17 @@ def create_template(length, width):
 def template_match(image, gray, length, width):
     template = create_template(length, width)
     result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
-    threshold = 0.5
-    # Find all locations where match values are greater than threshold
-    locations = np.where((result >= threshold))
-    # Outline locations
-    for point in zip(*locations[::-1]):
-        cv2.rectangle(
-            image, point, (point[0] + width, point[1] + length), (0, 0, 255), 4)
+    threshold = 0.6
+    h, w = gray.shape
+    if (w > width) and (h > length):
+        # Find all locations where match values are greater than threshold
+        locations = np.where((result >= threshold))
+        # Outline locations
+        for point in zip(*locations[::-1]):
+            cv2.rectangle(
+                image, point, (point[0] + width, point[1] + length), (0, 0, 255), 4)
     # Rotate image and template match
-    if (length != width):
+    if (length != width) and (w > length) and (h > width):
         template = create_template(width, length)
         result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
         # Find all locations where match values are greater than threshold
