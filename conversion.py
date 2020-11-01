@@ -4,22 +4,49 @@ import cv2
 import os
 import imutils
 import shapes
+from math import radians, cos, sin, asin, sqrt
+
+x_left = 1
+x_right = 1
+y_left = 1
+y_right = 1
+x_ratio = 1
+y_ratio = 1
+h = 1
+w = 1
 
 
-def invert(image, edges):
-    inverse = (1.0 / 255) * (255 - edges)
-    channels = cv2.split(image)
-    for channel in channels:
-        channel[:] = channel * inverse
-    cv2.merge(channels, edges)
-    return edges
+def haversine(lon1, lat1, lon2, lat2):
+    # Convert to radians
+    print(lon1, lat1, lon2, lat2)
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    lon_range = lon2 - lon1
+    lat_range = lat2 - lat1
+    a = sin(lat_range/2)**2 + cos(lat1) * cos(lat2) * sin(lon_range/2)**2
+    c = 2 * asin(sqrt(a))
+    # Radius of the earth (metres)
+    r = 6371000
+    d = c*r
+    return d
 
 
-def convert(image, name):
+def coordinates(image):
+    global x_ratio, y_ratio, x_left, x_right, y_left, y_right, h, w
+    h, w, _ = image.shape
+    print("h,w =", h,w)
+    x_range = abs(x_left - x_right)
+    y_range = abs(y_left - y_right)
+    x_ratio = x_range/w
+    y_ratio = y_range/h
+    print("xl,xr=", x_left,x_right)
+    print("xrange=", x_range)
+    print("xr,yr=", x_ratio, y_ratio)
+
+
+def convert(image):
     # First write out image
-    name_ext = name + ".png"
-    cv2.imwrite(name, image)
-    command = "cat " + name_ext + " | pngtopnm | potrace > " + name + ".eps"
+    cv2.imwrite("output.png", image)
+    command = "cat output.png | pngtopnm | potrace > output.eps"
     os.system(command)
 
 
@@ -31,9 +58,8 @@ def canny_edge(image):
     lower = int(max(0, (1.0 - sigma) * m))
     upper = int(min(255, (1.0 + sigma) * m))
     # Apply canny edge detection
-    canny = cv2.Canny(image, lower, upper, None, 3, False)
-    canny2 = cv2.Canny(image, lower, upper, None, 3, True)
-    cv2.imwrite("laplace.png", canny2)
+    canny = cv2.Canny(image, lower, upper, None, 3, True)
+    #canny = cv2.Canny(image, 150, 200, None, 3, True)
     # minval, maxval, aperture_size (size of sobel kernel) defaults as 3, L2gradient specifies euqation for finding gradient magnitude
     return canny
 
@@ -70,7 +96,18 @@ def unsharp_mask(image):
     return sharpened
 
 
-def preprocess(image, blurring, edge_detect):
+def sobel(image):
+    sobelx = cv2.Sobel(image, cv2.CV_16S, 1, 0, ksize=1)  # x
+    sobely = cv2.Sobel(image, cv2.CV_16S, 0, 1, ksize=1)  # y
+    # Convert back to 8U
+    abs_grad_x = cv2.convertScaleAbs(sobelx)
+    abs_grad_y = cv2.convertScaleAbs(sobely)
+    # Approximate gradient
+    grad = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
+    return grad
+
+
+def preprocess(image, blurring, sharpen, edge_detect):
    # Convert image to grayscale
     grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     # Blur image
@@ -81,50 +118,88 @@ def preprocess(image, blurring, edge_detect):
     else:
         blurred = median_blur(grayscale, 5)
     cv2.imwrite("blurred.png", blurred)
-    # Increase contrast
+    # Alter contrast
     alpha = 1
     beta = 1
     blurred = cv2.convertScaleAbs(blurred, alpha, beta)
     cv2.imwrite("contrast.png", blurred)
     # Sharpen
-    # sharp = cv2.Laplacian(blurred, cv2.CV_8U, 1)
-    #kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-    #sharp = cv2.filter2D(blurred, -1, kernel)
-    #sharp = unsharp_mask(blurred)
-    #cv2.imwrite("sharp.png", sharp)
-    #edges2 = cv2.Laplacian(blurred, cv2.CV_64F)
-    #cv2.imwrite("laplace.png", edges2)
+    if sharpen == "unsharp":
+        sharp = unsharp_mask(blurred)
+    elif sharpen == "general":
+        kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+        sharp = cv2.filter2D(blurred, -1, kernel)
+    else:
+        sharp = blurred
     # Apply edge detection
-    edges = canny_edge(blurred)
+    if edge_detect == "sobel":
+        edges = sobel(sharp)
+    elif edge_detect == "laplace":
+        edges = cv2.Laplacian(sharp, cv2.CV_16S, None, 1)
+        edges = cv2.convertScaleAbs(edges)
+    else:
+        edges = canny_edge(sharp)
     cv2.imwrite("canny.png", edges)
-    # Invert image
-    #inverted = invert(grayscale, edges)
-    #cv2.imwrite("inverted.png", inverted)
-    # return inverted
     return edges
 
+
+def main(raster, c_file):
+    line = c_file.readline()
+    line = line.split(",")
+    global x_left, x_right, y_left, y_right
+    y_left = float(line[0])
+    x_left = float(line[1])
+    y_right = float(line[2])
+    x_right = float(line[3])
+    c_file.close()
+    coordinates(raster)
+    # Set pre-processing functions
+    blurring = "median"
+    edge_detect = "sobel"
+    sharpen = "na"
+    # Pre-process
+    processed = preprocess(raster, blurring, sharpen, edge_detect)
+    # Find circles
+    circles, output = shapes.circles(raster, processed, 0, 40, 30)
+    # Post-process
+    convert(output) 
+    # Create output file
+    o_file = open("output.txt", "w")
+    o_file.write("#Format: x,y,r \n")
+    global x_ratio, y_ratio
+    i = 1
+    for (x, y, r) in circles:
+        print("x,y,r=", x,y,r)
+        centre_x = x_left + x*x_ratio #long1
+        centre_y = y_right + y*y_ratio #lat1
+        rad_point = x_left + (x+r)*x_ratio #long2
+        radius = haversine(centre_x, centre_y, rad_point, centre_y)
+        o_file.write("Circle " + str(i) + ": " + str(centre_x) +
+                        ", " + str(centre_y) + ", " + str(radius) + "\n")
+        i += 1
+    o_file.close()
 
 if __name__ == "__main__":
     try:
         ap = argparse.ArgumentParser()
         ap.add_argument("-i", "--image", required=True,
                         help="path to the image file")
+        #args = vars(ap.parse_args())
+        ap.add_argument("-c", "--coords", required=True,
+                        help="path to the coords file")
         args = vars(ap.parse_args())
         # Load image
         raster = cv2.imread(args["image"])
-        # Set pre-processing functions
-        blurring = "bilateral"
-        edge_detect = "canny"
-        # Pre-process
-        processed = preprocess(raster, blurring, edge_detect)
-        # Find circles
-        #shapes.circles(raster, processed)
-        matched = raster.copy()
-        h, w = processed.shape
-        for y in range(60, h-60, 1):
-            for x in range(60, int(w/2), 1):
-                matched = shapes.template_match(matched, processed, y, x)
+        # Load coordinates
+        c_file = open(args["coords"], "r")
+        main(raster, c_file)
+        #matched = raster.copy()
+        #h, w = processed.shape
+        # for y in range(60, h-60, 1):
+        # for x in range(60, int(w/2), 1):
+        #matched = shapes.template_match(matched, processed, y, x)
         # convert(processed)
-        cv2.imwrite("matched.png", matched)
+        #matched = shapes.squares(raster, processed)
+        #cv2.imwrite("matched.png", matched)
     except Exception as e:
         print(e)
