@@ -11,19 +11,19 @@ def create_rect_template(length, width):
     cv2.imwrite("template.png", template)
     return template
 
-def create_circle_template(radius):
-    template = np.zeros((radius, radius, 3), np.uint8)
-    cv2.circle(template, (int(radius/2), int(radius/2)), radius, (255, 255, 255), 1)
+
+def create_circle_template(diameter):
+    template = np.zeros((diameter, diameter, 3), np.uint8)
+    cv2.circle(template, (int(diameter/2), int(diameter/2)),
+               (int(diameter/2)-1), (255, 255, 255), 1)
     template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
     cv2.imwrite("template.png", template)
     return template
 
+
 def template_match(image, filtered, length, width):
-    # Create blank image with same dimensions as input
-    output = image.copy()
-    output[:] = (255, 255, 255)
     # Threshold for positive matches
-    threshold = 0.6
+    threshold = 0.56
     h, w = filtered.shape
     if (w > width) and (h > length):
        # Create rectangular template
@@ -31,50 +31,52 @@ def template_match(image, filtered, length, width):
         result = cv2.matchTemplate(filtered, template, cv2.TM_CCOEFF_NORMED)
         # Find all locations where match values are greater than threshold
         locations = np.where((result >= threshold))
-        # Outline locations
-        for point in zip(*locations[::-1]):
-            cv2.rectangle(
-                image, point, (point[0] + width, point[1] + length), (0, 0, 255), 4)
-            cv2.rectangle(
-                output, point, (point[0] + width, point[1] + length), (0, 0, 255), 4)
-    # Rotate image and template match
-    if (length != width) and (w > length) and (h > width):
-        template = create_rect_template(width, length)
-        result = cv2.matchTemplate(filtered, template, cv2.TM_CCOEFF_NORMED)
-        # Find all locations where match values are greater than threshold
-        locations = np.where((result >= threshold))
-        # Outline locations
-        for point in zip(*locations[::-1]):
-            cv2.rectangle(
-                image, point, (point[0] + length, point[1] + width), (0, 0, 255), 4)
-            cv2.rectangle(
-                output, point, (point[0] + width, point[1] + length), (0, 0, 255), 4)
-    return image, output
+    return locations
 
+
+def circle_template_match(image, filtered, diameter):
+    # Threshold for positive matches
+    threshold = 0.35
+    template = create_circle_template(diameter)
+    result = cv2.matchTemplate(filtered, template, cv2.TM_CCOEFF_NORMED)
+    # Find all locations where match values are greater than threshold
+    locations = np.where((result >= threshold))
+    return locations
 
 def angle_cos(p0, p1, p2):
     d1, d2 = (p0-p1).astype('float'), (p2-p1).astype('float')
     return abs(np.dot(d1, d2) / np.sqrt(np.dot(d1, d1)*np.dot(d2, d2)))
 
 
-def squares(image, gray):
+def squares(image):
+    # Pad image to ignore border contour
+    img2 = np.pad(image.copy(), ((4,4), (4,4), (0,0)), 'edge')
+    img = cv2.GaussianBlur(img2, (5, 5), 0)
     squares = []
-    bin = cv2.dilate(gray, None)
-    bin = cv2.dilate(bin, None)
-    bin = cv2.dilate(bin, None)
-    cv2.imwrite("dilate.png", bin)
-    contours = cv2.findContours(bin, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
-    contours = imutils.grab_contours(contours)
-    for cnt in contours:
-        perimeter = cv2.arcLength(cnt, True)
-        cnt = cv2.approxPolyDP(cnt, 0.04*perimeter, True)
-        if len(cnt) == 4 and cv2.contourArea(cnt) > 400: 
-            cnt = cnt.reshape(-1, 2)
-            max_cos = np.max([angle_cos(cnt[i], cnt[(i+1) % 4], cnt[(i+2) % 4]) for i in range(4)])
-            if max_cos < 0.1:
-                squares.append(cnt)
-    cv2.drawContours(image, squares, -1, (0, 255, 0), 3)
-    return image
+    for gray in cv2.split(img):
+        for thrs in range(0, 255, 26):
+            if thrs == 0:
+                bin = cv2.Canny(gray, 0, 50, apertureSize=5)
+                bin = cv2.dilate(bin, None)
+            else:
+                _retval, bin = cv2.threshold(
+                    gray, thrs, 255, cv2.THRESH_BINARY)
+            bin = cv2.bitwise_not(bin)
+            contours, _hierarchy = cv2.findContours(
+                bin, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                cnt_len = cv2.arcLength(cnt, True)
+                cnt = cv2.approxPolyDP(cnt, 0.02*cnt_len, True)
+                if len(cnt) == 4 and cv2.contourArea(cnt) > 1000 and cv2.isContourConvex(cnt):
+                    cnt = cnt.reshape(-1, 2)
+                    max_cos = np.max(
+                        [angle_cos(cnt[i], cnt[(i+1) % 4], cnt[(i+2) % 4]) for i in range(4)])
+                    if max_cos < 0.1:
+                        squares.append(cnt)
+    cv2.drawContours(img2, squares, -1, (0, 0, 255), 4)
+    # Remove padding
+    img = img2[4:-4,4:-4,:]
+    return img
 
 
 def circles(image, filtered, minRadius, maxRadius, minDist):
@@ -94,35 +96,40 @@ def circles(image, filtered, minRadius, maxRadius, minDist):
             cv2.circle(image, (x, y), r, (0, 0, 255), 4)
             # Draw detected circles onto blank image
             cv2.circle(output, (x, y), r, (0, 0, 0), 4)
-    name1 = "outlined2(" + str(minDist) + ")(" + str(dp) + ").png"
-    name2 = "simple2(" + str(minDist) + ")(" + str(dp) + ").png"
-    cv2.imwrite(name1, image)
-    cv2.imwrite(name2, output)
+    cv2.imwrite("outlined.png", image)
+    cv2.imwrite("simple.png", output)
     return circles, output
 
 
-def triangles(image, gray):
-    # Find triangles
-    # Create blank image with same dimensions as input
-    output = image.copy()
-    output[:] = (255, 255, 255)
-    # Find contours in image
-    # image, mode, method
-    contours = cv2.findContours(
-        gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = imutils.grab_contours(contours)
-    for cont in contours:
-        # Compute perimeter of contour
-        perimeter = cv2.arcLength(cont, True)
-        # Construct contour approximation
-        approx = cv2.approxPolyDP(cont, 0.04*perimeter, True)
-        # Determine whether contour is a triangle
-        if len(approx) == 3:
-            cv2.drawContours(image, [cont], -1, (0, 0, 255), 4)
-            cv2.drawContours(output, [cont], -1, (0, 0, 255), 4)
-
-    cv2.imwrite("triangle.png", image)
-    cv2.imwrite("skeleton_tri.png", output)
+def contour_circles(image):
+    # Pad image to ignore border contour
+    img2 = np.pad(image.copy(), ((4,4), (4,4), (0,0)), 'edge')
+    img = cv2.GaussianBlur(img2, (5, 5), 0)
+    circles = []
+    for gray in cv2.split(img):
+        for thrs in range(0, 255, 26):
+            if thrs == 0:
+                bin = cv2.Canny(gray, 0, 50, apertureSize=3)
+                bin = cv2.dilate(bin, None)
+            else:
+                _retval, bin = cv2.threshold(
+                    gray, thrs, 255, cv2.THRESH_BINARY)
+            bin = cv2.bitwise_not(bin)
+            contours, _hierarchy = cv2.findContours(
+                bin, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+            for cnt in contours:
+                cnt_len = cv2.arcLength(cnt, True)
+                cnt = cv2.approxPolyDP(cnt, 0.03*cnt_len, True)
+                if len(cnt) >= 8 and cv2.contourArea(cnt) > 200 and cv2.isContourConvex(cnt):
+                    cnt = cnt.reshape(-1, 2)
+                    max_cos = np.max(
+                        [angle_cos(cnt[i], cnt[(i+1) % 4], cnt[(i+2) % 4]) for i in range(4)])
+                    if max_cos < 0.1:
+                        circles.append(cnt)
+    cv2.drawContours(img2, circles, -1, (0, 0, 255), 4)
+    # Remove padding
+    img = img2[4:-4,4:-4,:]
+    return img
 
 
 def rectangles():

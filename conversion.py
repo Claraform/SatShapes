@@ -18,7 +18,7 @@ w = 1
 
 def haversine(lon1, lat1, lon2, lat2):
     # Convert to radians
-    print(lon1, lat1, lon2, lat2)
+    #print(lon1, lat1, lon2, lat2)
     lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
     lon_range = lon2 - lon1
     lat_range = lat2 - lat1
@@ -33,20 +33,20 @@ def haversine(lon1, lat1, lon2, lat2):
 def coordinates(image):
     global x_ratio, y_ratio, x_left, x_right, y_left, y_right, h, w
     h, w, _ = image.shape
-    print("h,w =", h,w)
+    #print("h,w =", h,w)
     x_range = abs(x_left - x_right)
     y_range = abs(y_left - y_right)
     x_ratio = x_range/w
     y_ratio = y_range/h
-    print("xl,xr=", x_left,x_right)
-    print("xrange=", x_range)
-    print("xr,yr=", x_ratio, y_ratio)
+    #print("xl,xr=", x_left,x_right)
+    #print("xrange=", x_range)
+    #print("xr,yr=", x_ratio, y_ratio)
 
 
 def convert(image):
     # First write out image
-    cv2.imwrite("output.png", image)
-    command = "cat output.png | pngtopnm | potrace > output.eps"
+    cv2.imwrite("vector_input.png", image)
+    command = "cat vector_input.png | pngtopnm | potrace > vector_output.eps"
     os.system(command)
 
 
@@ -97,6 +97,7 @@ def unsharp_mask(image):
 
 
 def sobel(image):
+    #cv2.FILTER_SCHARR
     sobelx = cv2.Sobel(image, cv2.CV_16S, 1, 0, ksize=1)  # x
     sobely = cv2.Sobel(image, cv2.CV_16S, 0, 1, ksize=1)  # y
     # Convert back to 8U
@@ -117,12 +118,13 @@ def preprocess(image, blurring, sharpen, edge_detect):
         blurred = bilateral_blur(grayscale)
     else:
         blurred = median_blur(grayscale, 5)
-    cv2.imwrite("blurred.png", blurred)
+        #blurred = grayscale
+    #cv2.imwrite("blurred.png", blurred)
     # Alter contrast
     alpha = 1
     beta = 1
     blurred = cv2.convertScaleAbs(blurred, alpha, beta)
-    cv2.imwrite("contrast.png", blurred)
+    #cv2.imwrite("contrast.png", blurred)
     # Sharpen
     if sharpen == "unsharp":
         sharp = unsharp_mask(blurred)
@@ -135,13 +137,79 @@ def preprocess(image, blurring, sharpen, edge_detect):
     if edge_detect == "sobel":
         edges = sobel(sharp)
     elif edge_detect == "laplace":
-        edges = cv2.Laplacian(sharp, cv2.CV_16S, None, 1)
+        #edges = sharp
+        edges = cv2.Laplacian(sharp, cv2.CV_16S, None, 3)
         edges = cv2.convertScaleAbs(edges)
     else:
         edges = canny_edge(sharp)
-    cv2.imwrite("canny.png", edges)
+    cv2.imwrite("edges.png", edges)
     return edges
 
+def circles(raster, processed, method):
+# Find circles
+    if method == "contour":
+        output = shapes.contour_circles(raster)
+        cv2.imwrite("output.png", output)
+    elif method == "cht":
+        #circles, output = shapes.circles(raster, processed, 20, 67, 10)
+        circles, output = shapes.contour_circles(raster, processed)
+        # Post-process
+        convert(output) 
+        # Create output file
+        o_file = open("output.txt", "w")
+        o_file.write("#Format: x,y,r \n")
+        global x_ratio, y_ratio, x_left, y_right
+        i = 1
+        if circles is not None:
+          for (x, y, r) in circles:
+              #print("x,y,r=", x,y,r)
+              print(r)
+              centre_x = x_left + x*x_ratio #long1
+              centre_y = y_right + y*y_ratio #lat1
+              rad_point = x_left + (x+r)*x_ratio #long2
+              radius = haversine(centre_x, centre_y, rad_point, centre_y)
+              o_file.write("Circle " + str(i) + ": " + str(centre_x) +
+                              ", " + str(centre_y) + ", " + str(radius) + "\n")
+              i += 1
+        o_file.close()
+    else:
+        global h, w
+        max_d = min(h, w)
+        # Create blank image with same dimensions
+        output = raster.copy()
+        image = raster.copy()
+        output[:] = (255, 255, 255)
+        for d in range(20, max_d, 2):
+            locations = shapes.circle_template_match(image, processed, d)
+            # Outline rectangles
+            for point in zip(*locations[::-1]):
+                cv2.circle(raster, (point[0]+int(d/2), point[1]+int(d/2)), int(d/2), (0, 0, 255), 4)
+                cv2.circle(output, (point[0]+int(d/2), point[1]+int(d/2)), int(d/2), (0, 0, 255), 4)
+        cv2.imwrite("tem.png", raster)
+        cv2.imwrite("outline.png", output)
+
+
+def squares(raster, processed, method):
+  if method == "contour":
+    output = shapes.squares(raster)
+    cv2.imwrite("output.png", output)
+  else:
+    global h, w
+    length = 51
+    width = 101
+    # Create blank image with same dimensions
+    output = raster.copy()
+    image = raster.copy()
+    output[:] = (255, 255, 255)
+    for y in range(50, length, 1):
+      for x in range(100, width, 1):
+        locations = shapes.template_match(image, processed, y, x)
+        # Outline rectangles
+        for point in zip(*locations[::-1]):
+            cv2.rectangle(raster, point, (point[0] + x, point[1] + y), (0, 0, 255), 4)
+            cv2.rectangle(output, point, (point[0] + x, point[1] + y), (0, 0, 255), 4)
+    cv2.imwrite("tem.png", raster)
+    cv2.imwrite("outline.png", output)
 
 def main(raster, c_file):
     line = c_file.readline()
@@ -157,27 +225,21 @@ def main(raster, c_file):
     blurring = "median"
     edge_detect = "sobel"
     sharpen = "na"
+    shape = "sq_template"
     # Pre-process
     processed = preprocess(raster, blurring, sharpen, edge_detect)
-    # Find circles
-    circles, output = shapes.circles(raster, processed, 0, 40, 30)
-    # Post-process
-    convert(output) 
-    # Create output file
-    o_file = open("output.txt", "w")
-    o_file.write("#Format: x,y,r \n")
-    global x_ratio, y_ratio
-    i = 1
-    for (x, y, r) in circles:
-        print("x,y,r=", x,y,r)
-        centre_x = x_left + x*x_ratio #long1
-        centre_y = y_right + y*y_ratio #lat1
-        rad_point = x_left + (x+r)*x_ratio #long2
-        radius = haversine(centre_x, centre_y, rad_point, centre_y)
-        o_file.write("Circle " + str(i) + ": " + str(centre_x) +
-                        ", " + str(centre_y) + ", " + str(radius) + "\n")
-        i += 1
-    o_file.close()
+    #processed = cv2.cvtColor(raster, cv2.COLOR_BGR2GRAY)
+    if shape == "cht":
+      circles(raster, processed, "cht")
+    elif shape == "circle_template":
+      circles(raster, processed, "template")
+    elif shape == "circle_contour":
+      circles(raster, processed, "contour")
+    elif shape == "squares":
+      squares(raster, processed, "contour")
+    else:
+      squares(raster, processed, "template")
+    
 
 if __name__ == "__main__":
     try:
@@ -193,13 +255,5 @@ if __name__ == "__main__":
         # Load coordinates
         c_file = open(args["coords"], "r")
         main(raster, c_file)
-        #matched = raster.copy()
-        #h, w = processed.shape
-        # for y in range(60, h-60, 1):
-        # for x in range(60, int(w/2), 1):
-        #matched = shapes.template_match(matched, processed, y, x)
-        # convert(processed)
-        #matched = shapes.squares(raster, processed)
-        #cv2.imwrite("matched.png", matched)
     except Exception as e:
         print(e)
