@@ -13,9 +13,9 @@ detected shapes.
 
 I. File Structure
 ------------------
-conversion.py     Main driver file: pre-processes, processes, and post-processes input data
+conversion.py - Main driver file: pre-processes, processes, and post-processes input data
 
-shapes.py         Contains functionality for shape detection
+shapes.py - Contains functionality for shape detection
 
 III. How To Run
 ----------------
@@ -41,19 +41,17 @@ V. Inputs
 
 VI. Outputs
 --------------
-1. output.png         A copy of the input image with detected shapes outlined
+1. output.png    -     A copy of the input image with detected shapes outlined
 
-2. outline.png        A binary template of the detected shapes
+2. outline.png    -    A binary template of the detected shapes
 
-3. output.txt         List of detected shapes and their coordinates and dimensions
+3. output.txt     -    List of detected shapes and their coordinates and dimensions
 
-4. vector_output.eps  Vector image of detected shapes
+4. vector_output.eps - Vector image of detected shapes
 
 VI. Notes
 --------------
-- Image filtering techniques can be tuned by altering the following variables
-
-    in the main() method in conversion.py:
+- Image filtering techniques can be tuned by altering the following variables in the main() method in conversion.py:
     
           - blurring # Sets image blurring method
           
@@ -61,10 +59,6 @@ VI. Notes
           
           - sharpen # Sets sharpening method
           
-- Contrast can be adjusted by tuning the parameters alpha and beta in preprocess()
-
-   in conversion.py
+- Contrast can be adjusted by tuning the parameters alpha and beta in preprocess() in conversion.py
    
-- The shape detection method can be set by changing the shape variable in main()
-
-   in conversion.py
+- The shape detection method can be set by changing the shape variable in main() in conversion.py
